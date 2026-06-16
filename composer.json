@@ -1,0 +1,25 @@
+{
+    "name": "componenta/serialize-interceptor",
+    "description": "Symfony Serializer result interceptor for Componenta",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "componenta/interceptor": "^1.0",
+        "symfony/serializer": "^7.4 || ^8.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Componenta\\Interceptor\\Serialization\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Componenta\\Interceptor\\Serialization\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "stable"
+}
