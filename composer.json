@@ -5,7 +5,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "componenta/interceptor": "^1.0",
+        "componenta/interceptor": "^2.0@dev",
         "symfony/serializer": "^7.4 || ^8.0"
     },
     "require-dev": {
@@ -21,5 +21,14 @@
             "Componenta\\Interceptor\\Serialization\\Tests\\": "tests/"
         }
     },
-    "minimum-stability": "stable"
+    "minimum-stability": "dev",
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "test": "@php vendor/bin/pest"
+    },
+    "prefer-stable": true
 }
