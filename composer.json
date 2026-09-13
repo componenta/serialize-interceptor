@@ -5,11 +5,13 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "componenta/interceptor": "^1.0 || ^2.0.1",
+        "componenta/interceptor": "^3.0.0",
         "symfony/serializer": "^7.4 || ^8.0"
     },
     "require-dev": {
-        "pestphp/pest": "^4.0"
+        "pestphp/pest": "^4.0",
+        "componenta/di": "^5.0.0",
+        "componenta/config": "^3.0.0"
     },
     "autoload": {
         "psr-4": {
@@ -30,5 +32,10 @@
     "scripts": {
         "test": "@php vendor/bin/pest"
     },
-    "prefer-stable": true
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    }
 }

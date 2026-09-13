@@ -20,7 +20,8 @@ final readonly class SerializeInterceptor implements InterceptorInterface
         private SerializerInterface $serializer,
         private string $format = 'json',
         private array $context = [],
-    ) {}
+    ) {
+    }
 
     public function intercept(
         CallableContextInterface $context,
@@ -32,7 +33,7 @@ final readonly class SerializeInterceptor implements InterceptorInterface
         if (is_array($result) && array_key_exists(Serialize::ATTR_DATA, $result)) {
             $serializerContext = [
                 ...$serializerContext,
-                ...($result[Serialize::ATTR_CONTEXT] ?? []),
+                ...$this->returnContext($result[Serialize::ATTR_CONTEXT] ?? []),
             ];
 
             return $this->serializer->serialize($result[Serialize::ATTR_DATA], $this->format, $serializerContext);
@@ -41,9 +42,22 @@ final readonly class SerializeInterceptor implements InterceptorInterface
         return $this->serializer->serialize($result, $this->format, $serializerContext);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @return array<string, mixed> */
+    private function returnContext(mixed $value): array
+    {
+        if (!is_array($value)) {
+            throw new InvalidArgumentException('Returned serializer context must be an array with string keys.');
+        }
+        $context = [];
+        foreach ($value as $key => $item) {
+            if (!is_string($key)) {
+                throw new InvalidArgumentException('Returned serializer context must have string keys.');
+            }
+            $context[$key] = $item;
+        }
+        return $context;
+    }
+    /** @return array<string, mixed> */
     private function resolveContext(CallableContextInterface $context): array
     {
         if ($this->context === []) {
@@ -62,8 +76,9 @@ final readonly class SerializeInterceptor implements InterceptorInterface
 
             if (is_string($key) && is_string($value) && isset($paramPositions[$key])) {
                 $position = $paramPositions[$key];
+                $parameterKey = array_key_exists($key, $context->parameters) ? $key : $position;
 
-                if (!array_key_exists($position, $context->parameters)) {
+                if (!array_key_exists($parameterKey, $context->parameters)) {
                     throw new InvalidArgumentException(sprintf(
                         '#[Serialize] context references parameter "%s" (position %d) which was not resolved.',
                         $key,
@@ -71,7 +86,7 @@ final readonly class SerializeInterceptor implements InterceptorInterface
                     ));
                 }
 
-                $param = $context->parameters[$position];
+                $param = $context->parameters[$parameterKey];
 
                 if (!is_object($param) || !property_exists($param, $value)) {
                     throw new InvalidArgumentException(sprintf(
