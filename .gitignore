@@ -1,4 +1,5 @@
 /vendor/
+/.dependencies/
 /.phpunit.cache/
 /composer.lock
 /.phpstan.cache/
@@ -6,3 +7,6 @@
 vendor/
 .phpunit.cache/
 integration/composer.lock
+
+/.composer-development.json
+/.composer-development.lock

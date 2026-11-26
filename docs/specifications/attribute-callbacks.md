@@ -1,8 +1,6 @@
 # Callback-built serializer context
 
-**Readiness:** blocked by reconciliation with the user-requested conversation, compatibility decisions, and the target DI 6 / Interceptor 4 dependency graph.
-
-This is a grounded design draft. The recommendations below are proposed decisions, not decisions attributed to an unavailable discussion. The public shape and disposition of legacy conventions must be reconciled with the requested design context before production slices become executable.
+**Status:** normative implementation contract. The implementation targets PHP 8.5.13+, Interceptor 4, DI 6, Config 4, and Symfony Serializer 8.1+.
 
 ## Objective
 
@@ -11,15 +9,15 @@ Allow `#[Serialize]` to compute serializer context through an explicit native ca
 ## Evidence and target baseline
 
 - Repository: `componenta/serialize-interceptor`.
-- Current and only inspected branch: `main` at `5451834606cf521a0b2c1321887d27477002dc29`.
+- Pre-feature baseline: `main` at `5451834606cf521a0b2c1321887d27477002dc29`.
 - No `AGENTS.md` or existing specification was present in the inspected tree.
 - Production surface consists of `src/Attribute/Serialize.php` and `src/SerializeInterceptor.php`.
 - `Serialize` extends `Componenta\Interceptor\Attribute\Intercept` and forwards `format` and `context` constructor arguments to `SerializeInterceptor` through the factory path.
-- Current `context` is `array<string, mixed>` in documentation. Its implementation also interprets a string key matching a target parameter name plus a string value as a parameter-property map. `Serialize::ATTR_MAP` renames those extracted properties.
-- Current result wrapping uses `Serialize::ATTR_DATA` and `Serialize::ATTR_CONTEXT`. When the data marker exists, the wrapper context overrides attribute context. Invalid non-array or non-string-key return context is rejected.
+- Baseline `context` is `array<string, mixed>` in documentation. Its implementation also interprets a string key matching a target parameter name plus a string value as a parameter-property map. `Serialize::ATTR_MAP` renames those extracted properties.
+- Existing result wrapping uses `Serialize::ATTR_DATA` and `Serialize::ATTR_CONTEXT`. When the data marker exists, the wrapper context overrides attribute context. Invalid non-array or non-string-key return context is rejected.
 - The implementation executes the handler first, resolves context second, and serializes third. It does not configure Symfony Serializer; applications provide `Symfony\Component\Serializer\SerializerInterface`.
-- `composer.json` requires PHP `^8.4`, Interceptor `^3.0.0`, Symfony Serializer `^7.4 || ^8.0`; development dependencies are DI `^5.0.0`, Config `^3.0.0`, and Pest `^4.0`.
-- Proposed target integration uses Interceptor's `refactor/di6-interceptor` at `cb68b34fd47b9c4d430c237a9ef25756e54aa055`, whose public context contract includes `getParameter`, prepared arguments, and nullable reflection.
+- The pre-feature `composer.json` required PHP `^8.4`, Interceptor `^3.0.0`, Symfony Serializer `^7.4 || ^8.0`; development dependencies are DI `^5.0.0`, Config `^3.0.0`, and Pest `^4.0`.
+- Target integration uses Interceptor `spec/attribute-callbacks-2026-11-26`, derived from `refactor/di6-interceptor` at `cb68b34fd47b9c4d430c237a9ef25756e54aa055`. Its public context contract includes `getParameter`, prepared arguments, and nullable reflection. The DI compatibility branch `fix/callback-dependency-baseline-2026-11-26` supplies DI 6 with Config 4.
 
 Source permalinks:
 
@@ -34,7 +32,7 @@ Source permalinks:
 
 ## Scope and boundaries
 
-This package owns conversion of a callable result to a serialized string and construction of the serializer context for that operation. It consumes Symfony's `SerializerInterface` and Componenta's public interceptor contracts. The recommended callback is invoked natively with explicit semantic inputs; DI suffix injection is not planned in this proposal. Factory construction continues to integrate through the public interceptor/DI boundary.
+This package owns conversion of a callable result to a serialized string and construction of the serializer context for that operation. It consumes Symfony's `SerializerInterface` and Componenta's public interceptor contracts. The callback is invoked natively with explicit semantic inputs; DI suffix injection is outside this contract. Factory construction continues to integrate through the public interceptor/DI boundary.
 
 It does not own normalizer registration, encoder registration, authorization policy, HTTP response creation, content negotiation, DI container construction, or serializer-context key semantics defined by Symfony or application normalizers.
 
@@ -53,9 +51,9 @@ No new callback registry, serializer abstraction duplicating Symfony's interface
 9. Production DI integration uses public contracts, never `Container` or `Componenta\DI\Internal`.
 10. PHP native attribute callback syntax and scope follow the DI 6 baseline: capture-free `static function` or a declared function/static-method first-class reference, with PHP `^8.5.13` for the selected integration.
 
-## Recommended public API proposal
+## Public API
 
-Retain a literal static `context` array and append an optional constructor argument `?Closure $contextFactory = null` to the attribute and its runtime interceptor. `Serialize` forwards the factory through the existing interceptor factory parameters. This makes static data and executable context construction unambiguous:
+Retain the existing `context` array, including supported parameter mappings, and append an optional constructor argument `?Closure $contextFactory = null` to the attribute and its runtime interceptor. `Serialize` forwards the factory through the existing interceptor factory parameters. The dedicated argument separates callback invocation from array context configuration:
 
 ```php
 #[Serialize(
@@ -71,36 +69,37 @@ Retain a literal static `context` array and append an optional constructor argum
 )]
 ```
 
-This is a proposed API, not existing supported syntax. Its recommended merge contract is: start with the literal static context, invoke the factory once when present, validate its result, and shallowly replace static keys with dynamic keys. Nested arrays are replaced rather than recursively merged; null is an explicit value; an empty dynamic array leaves static context unchanged. Neither input array is mutated.
+The merge contract is: resolve the existing static options and parameter-property mappings, apply any return-level wrapper context, invoke the factory once when present, validate its result, and shallowly replace earlier keys with dynamic keys. Nested arrays are replaced rather than recursively merged; null is an explicit value; an empty dynamic array leaves static context unchanged. Neither input array is mutated.
 
-A `context: array|Closure` input is not recommended: a separate factory lets callers keep ordinary static serializer options alongside the computed overrides without reconstructing them in every callback. The proposal adds only `contextFactory`, not parallel equivalent callback entry points.
+A `context: array|Closure` input is not recommended: a separate factory lets callers keep ordinary static serializer options alongside the computed overrides without reconstructing them in every callback. The feature adds only `contextFactory`, not parallel equivalent callback entry points.
 
-### Proposed callback contract
+### Callback contract
 
 - Invoke natively with `(mixed $result, CallableContextInterface $invocation)` after successful continuation completion. Business values are available explicitly through the public `getParameter` contract. `$invocation` is the exact context instance originally supplied to this interceptor; a downstream layer may pass a different immutable context to its own continuation, but that replacement is not propagated backward through the returned result.
 - Do not resolve additional callback parameters through DI. Missing required extra parameters and incompatible types follow native PHP invocation errors. Parameter attributes on the callback do not trigger DI processing.
 - A user-defined callback may omit unused trailing inputs according to native PHP calling semantics. Invoke it using callback-local argument slots: if a callback declares its result or invocation input by reference and reassigns that parameter, the reassignment must not replace the selected serialization data or the interceptor's invocation-context slot. Nested objects retain their supplied identity; their mutation is not isolated or rolled back, and the package does not deep-clone input graphs.
 - Require a returned `array<string, mixed>`; reject a non-array or any integer key with `InvalidArgumentException` before invoking the serializer. Context values remain open because Symfony and application normalizers own them.
 - Callback-body Throwables, native invocation errors, and serializer Throwables propagate unchanged.
-- With an ordinary continuation result, `$result` is that exact value/object. If legacy return wrappers remain supported, whether the callback receives the wrapper or its selected data and how wrapper context combines with dynamic context must be settled during reconciliation. That material unresolved interaction keeps the whole affected execution path blocked.
+- With an ordinary continuation result, `$result` is that exact value/object. With the existing return wrapper, `$result` is the selected `Serialize::ATTR_DATA` value. Wrapper context is validated before the callback; callback overrides have final priority. Malformed wrapper context prevents callback execution and serialization.
 
-## Legacy behavior and compatibility decision
+## Existing behavior and compatibility
 
-The current array context serves two meanings: literal serializer options and implicit parameter-property mapping. The final target must explicitly choose the disposition of:
+The callback feature is additive. A separate optional `contextFactory` makes executable context construction explicit while retaining existing consumers' parameter maps and return wrappers. Removing those features is not required to support native callbacks or the latest dependency contracts.
 
-| Current contract | Required decision |
+| Existing contract | Selected behavior |
 |---|---|
-| Literal `context` array | Recommended target: always literal static serializer options, merged before callback overrides. |
-| Parameter-name / property-name inference | Recommended target: replace with explicit `contextFactory`; reconcile the breaking migration against the missing design context before removal. |
-| `Serialize::ATTR_MAP` | Proposed removal together with implicit mapping; migrate known uses into explicit callback logic and remove parser/docs/tests prescribing the superseded convention only after reconciliation. |
-| `Serialize::ATTR_DATA` / `ATTR_CONTEXT` result wrapper | Retain with exact callback timing/precedence, or replace with an explicit result value contract if required by the requested design. |
-| Direct `new SerializeInterceptor(...)` usage | Recommended target appends optional `contextFactory`, adding no required DI invoker dependency. Changes caused by the legacy mapping/result-wrapper disposition still need a migration rule. |
+| Literal `context` options | Preserve existing options as the first context layer. |
+| Parameter-name / property-name inference | Preserve existing interpretation; applications can instead calculate explicit options through `contextFactory`. |
+| `Serialize::ATTR_MAP` | Preserve renaming of mapped properties. |
+| `Serialize::ATTR_DATA` / `ATTR_CONTEXT` | Preserve data selection and validated return context. The callback sees selected data and its context overrides run after return context. |
+| Direct `new SerializeInterceptor(...)` | Append optional `contextFactory`; no required invoker/container dependency is added. |
+| Optional reflector | A null reflector disables declaration-based parameter mapping; ordinary static options and callback context still work. |
 
-No assumption that backward compatibility is required has been made. Retaining legacy inference indefinitely just because it exists would preserve ambiguous context interpretation. Conversely, removing it without recovering the user's decisions would invent a requirement. Existing applications and independently published consumers need an explicit migration description once the target is selected.
+The dependency transition is an upcoming major package line: PHP 8.5.13+, Interceptor 4, DI 6, Config 4, and Symfony Serializer 8.1+. The feature branch declares the real `2.0.x-dev` alias. Runtime behavior for declarations without the new callback is preserved within those current dependency contracts.
 
 ## Invocation and lifetime constraints
 
-For an ordinary result, the proposed sequence is continuation result, literal static context, callback invocation if present, dynamic context validation and override, and one serializer call. The placement and precedence of optional legacy wrapper handling remains blocked until the missing design context is reconciled. A callback cannot be evaluated during metadata discovery or application bootstrap.
+The sequence is successful continuation, existing static/mapped context resolution, optional wrapper context validation and data selection, callback invocation if present, computed context validation and override, and one serializer call. A callback cannot be evaluated during metadata discovery or application bootstrap.
 
 Attribute metadata may be cached, but per-invocation callbacks and their temporary objects must follow native attribute materialization. Ordinary `serialize()` cannot persist PHP Closures; this change does not introduce persistent serialized attribute instances. Repeated execution of the same declaration must preserve cold/warm behavior, exception phase, private/trait lexical scope, and per-call dependency selection.
 
@@ -119,43 +118,37 @@ Use a recording implementation of the public Symfony `SerializerInterface` to ve
 | Handler failure | Neither context callback nor serializer runs; the original Throwable reaches the caller. |
 | Callback failure | Serializer remains uncalled and callback Throwable identity is preserved. |
 | Invalid callback result | Non-array and integer-key context values fail before serialization. |
-| Static/dynamic composition | Literal static context is the base; dynamic keys override it. Overlapping keys, explicit null, empty arrays, and nested arrays match the proposed shallow-merge contract. |
+| Static/dynamic composition | Resolved static/mapped context is the base; returned context overrides it; computed context overrides both. Overlapping keys, explicit null, empty arrays, and nested arrays match the shallow-merge contract. |
 | Native invocation without DI suffix | A required third callback parameter fails natively and no service resolver is consulted; the serializer is not called. |
 | Named and positional invocation | Callback parameter lookup works through prepared public contexts for both call forms. |
 | No reflector assumption | Static and callback context work for a valid custom context whose reflector is null. |
-| Data/result boundary | Null, scalar, array, object, and any retained return wrapper follow the finalized data-selection rule. |
+| Data/result boundary | Null, scalar, array, object, and the supported return wrapper follow the data-selection rule. |
 | Native syntax/scope | Inline static closure, function reference, private static method reference, and a trait used by two classes preserve scope. |
 | Cache/lifetime parity | Cold/warm calls see current invocation inputs; weak references reveal no retention of per-call result/context objects. |
 | Real integration | `#[Serialize]` through native `AttributeInterceptor`, public DI 6 services, a real Symfony serializer, and an outer HTTP response wrapper produces the expected response body. |
-| Clean migration | Removed magic keys are ordinary serialized data/context keys or rejected exactly as specified; no old parser path or obsolete examples remain. |
+| Existing conventions | Parameter mapping, `ATTR_MAP`, and return wrappers keep their existing behavior; callback overrides are applied last. |
 | Dependency boundaries | Production code uses public interceptor/DI/Symfony contracts and an installable Composer graph. |
 
 Each implemented behavior requires a failing public-contract test before its implementation. Existing `composer test` invokes Pest. Do not add tests of private context-resolution helpers or replicate implementation expressions as assertions.
 
 ## Grounded change surface
 
-- `src/Attribute/Serialize.php`: final callback declaration input, forwarding, and disposition of magic constants.
-- `src/SerializeInterceptor.php`: explicit sequence, callback invocation, context validation/composition, and removal or retention of old inference.
+- `src/Attribute/Serialize.php`: optional callback declaration and forwarding through the existing factory parameters; keep existing constants.
+- `src/SerializeInterceptor.php`: explicit sequence, callback-local argument slots, context validation/composition, and nullable-reflector support.
 - `tests/SerializeInterceptorTest.php`: static context, callback context, serializer boundary, errors, and order.
 - `tests/NamedContextTest.php`: target DI 6 integration and named/prepared argument behavior.
 - `tests/bootstrap.php`: test runtime wiring only if needed by the selected DI/Interceptor version.
 - `README.md` and `README.ru.md`: real callback syntax, context result rules, source/result timing, and migration examples.
-- `composer.json`: move to the selected PHP/Interceptor/DI/Config graph; production DI requirements must be declared if production code directly consumes DI interfaces.
+- `composer.json`: require the selected PHP/Interceptor/DI/Config/Symfony graph and the real feature-branch alias. Production code consumes the interceptor and serializer contracts; DI is used by integration tests through the existing factory boundary.
 
-## Bounded evidence-acquisition plan
+## Implementation and verification
 
-### E1 — Recover requested design decisions
+The implementation first established failing public capability tests, then added the optional attribute/runtime constructor argument, deterministic merge sequence, callback input-slot isolation, result validation, and null-reflector handling. Existing parameter-mapping and return-wrapper tests remain preservation controls.
 
-Obtain the relevant user-supplied design decisions from the unavailable prior discussion. Compare them with the recommended optional `contextFactory`, native two-input invocation without DI suffix, literal-static-then-dynamic override, and proposed removal of implicit parameter mapping. Explicitly settle the result wrapper's retention/removal, callback data selection, and context precedence. Stop when the normative sequence and compatibility obligations are complete.
+`tests/ContextFactoryTest.php` covers direct invocation, returned data identity, order, errors, override priority, repeated calls, native invocation, and the real DI 6/attribute/Symfony pipeline. `tests/SerializeInterceptorTest.php` and `tests/NamedContextTest.php` retain the established static, mapped, and returned-context behaviors. Static analysis is part of the package's `composer analyse` command.
 
-### E2 — Settle installable dependency baseline
-
-Use the target Interceptor 4 / DI 6 public contracts and verify Composer constraints together. The inspected Interceptor branch requires Config `^4.0`; inspected DI 6 refs require `^3.0.0`. Determine the owner and revision of the required Config migration before claiming end-to-end acceptance. No manifest changes are authorized by this specification-only draft.
-
-## Production execution outline — not executable while blocked
-
-Once E1 and E2 are resolved, derive vertical slices for: (1) callback context through direct interceptor use with its boundary tests; (2) native attribute and real DI integration; (3) removal/migration of superseded context conventions, if selected, with negative controls; (4) scope/lifetime/cache parity and documentation convergence. Keep each slice coherent and include failure proof, minimum implementation, cleanup, and observable done conditions. Do not split all tests from all implementation.
+CI checks out the actual Interceptor feature branch and DI Config 4 compatibility branch, using their declared aliases and explicit root development constraints. Production dependency ranges remain semantic constraints. The runtime matrix covers PHP 8.5.13 and the latest 8.5 patch. See [callback development verification](../development/attribute-callbacks.md) for installation steps, dependency revisions, and observed results.
 
 ## Final convergence requirement
 
-Compare the implementation with the finalized callback API, context/data selection sequence, compatibility decisions, dependency direction, and per-invocation lifecycle. Resolve every material omission or unrequested second path before completion.
+Compare the implementation with the callback API, context/data selection sequence, compatibility decisions, dependency direction, and per-invocation lifecycle. Resolve every material omission or unrequested second path before completion.

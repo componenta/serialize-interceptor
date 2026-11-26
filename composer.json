@@ -4,14 +4,15 @@
     "type": "library",
     "license": "MIT",
     "require": {
-        "php": "^8.4",
-        "componenta/interceptor": "^3.0.0",
-        "symfony/serializer": "^7.4 || ^8.0"
+        "php": "^8.5.13",
+        "componenta/interceptor": "^4.0",
+        "symfony/serializer": "^8.1"
     },
     "require-dev": {
         "pestphp/pest": "^4.0",
-        "componenta/di": "^5.0.0",
-        "componenta/config": "^3.0.0"
+        "phpstan/phpstan": "^2.3",
+        "componenta/di": "^6.0",
+        "componenta/config": "^4.0"
     },
     "autoload": {
         "psr-4": {
@@ -30,12 +31,14 @@
         }
     },
     "scripts": {
-        "test": "@php vendor/bin/pest"
+        "test": "@php vendor/bin/pest",
+        "analyse": "@php vendor/bin/phpstan analyse src tests/StaticAnalysis --level=max"
     },
     "prefer-stable": true,
     "extra": {
         "branch-alias": {
-            "dev-main": "1.0.x-dev"
+            "dev-main": "2.0.x-dev",
+            "dev-spec/attribute-callbacks-2026-11-26": "2.0.x-dev"
         }
     }
 }

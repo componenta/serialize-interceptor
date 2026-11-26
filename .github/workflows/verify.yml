@@ -1,0 +1,41 @@
+name: Verify
+
+on:
+  push:
+    branches: [main, 'spec/**', 'refactor/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.5.13', '8.5']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+      - run: composer validate --strict
+      - uses: actions/checkout@v7
+        with:
+          repository: componenta/di
+          ref: fix/callback-dependency-baseline-2026-11-26
+          path: .dependencies/di
+      - uses: actions/checkout@v7
+        with:
+          repository: componenta/interceptor
+          ref: spec/attribute-callbacks-2026-11-26
+          path: .dependencies/interceptor
+      - name: Select the current interceptor and DI contracts
+        run: php tools/development-composer.php
+      - run: COMPOSER=.composer-development.json composer update --no-interaction --prefer-dist
+      - run: composer test
+      - run: composer analyse

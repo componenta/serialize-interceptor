@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Componenta\Interceptor\Serialization;
 
+use Closure;
 use Componenta\Interceptor\CallableContextInterface;
 use Componenta\Interceptor\ContextHandlerInterface;
 use Componenta\Interceptor\InterceptorInterface;
@@ -14,12 +15,19 @@ use Symfony\Component\Serializer\SerializerInterface;
 final readonly class SerializeInterceptor implements InterceptorInterface
 {
     /**
+     * Calls $contextFactory($selectedData, $entryContext), when provided, after
+     * the continuation and return-wrapper processing. It must return an array
+     * with string keys. The data parameter may declare the selected data type;
+     * PHP validates that type at invocation.
+     *
      * @param array<string, mixed> $context Static serializer context or dynamic parameter-to-property map.
+     * @param Closure|null $contextFactory
      */
     public function __construct(
         private SerializerInterface $serializer,
         private string $format = 'json',
         private array $context = [],
+        private ?Closure $contextFactory = null,
     ) {
     }
 
@@ -33,30 +41,42 @@ final readonly class SerializeInterceptor implements InterceptorInterface
         if (is_array($result) && array_key_exists(Serialize::ATTR_DATA, $result)) {
             $serializerContext = [
                 ...$serializerContext,
-                ...$this->returnContext($result[Serialize::ATTR_CONTEXT] ?? []),
+                ...$this->validateContext($result[Serialize::ATTR_CONTEXT] ?? [], 'Returned'),
             ];
 
-            return $this->serializer->serialize($result[Serialize::ATTR_DATA], $this->format, $serializerContext);
+            $result = $result[Serialize::ATTR_DATA];
+        }
+
+        if ($this->contextFactory !== null) {
+            // Reassigning callback input slots must not replace the selected data.
+            // Nested objects and reference-bearing values retain native sharing.
+            $callbackData = $result;
+            $callbackContext = $context;
+            $serializerContext = [
+                ...$serializerContext,
+                ...$this->validateContext(($this->contextFactory)($callbackData, $callbackContext), 'Computed'),
+            ];
         }
 
         return $this->serializer->serialize($result, $this->format, $serializerContext);
     }
 
     /** @return array<string, mixed> */
-    private function returnContext(mixed $value): array
+    private function validateContext(mixed $value, string $origin): array
     {
         if (!is_array($value)) {
-            throw new InvalidArgumentException('Returned serializer context must be an array with string keys.');
+            throw new InvalidArgumentException($origin . ' serializer context must be an array with string keys.');
         }
         $context = [];
         foreach ($value as $key => $item) {
             if (!is_string($key)) {
-                throw new InvalidArgumentException('Returned serializer context must have string keys.');
+                throw new InvalidArgumentException($origin . ' serializer context must have string keys.');
             }
             $context[$key] = $item;
         }
         return $context;
     }
+
     /** @return array<string, mixed> */
     private function resolveContext(CallableContextInterface $context): array
     {
@@ -74,7 +94,7 @@ final readonly class SerializeInterceptor implements InterceptorInterface
                 continue;
             }
 
-            if (is_string($key) && is_string($value) && isset($paramPositions[$key])) {
+            if (is_string($value) && isset($paramPositions[$key])) {
                 $position = $paramPositions[$key];
                 $parameterKey = array_key_exists($key, $context->parameters) ? $key : $position;
 
@@ -117,7 +137,7 @@ final readonly class SerializeInterceptor implements InterceptorInterface
     {
         $map = [];
 
-        foreach ($context->reflector->getParameters() as $param) {
+        foreach ($context->reflector?->getParameters() ?? [] as $param) {
             $map[$param->getName()] = $param->getPosition();
         }
 

@@ -18,9 +18,9 @@ composer require componenta/serialize-interceptor
 
 ## Requirements
 
-- PHP 8.4+
-- `componenta/interceptor`
-- `symfony/serializer`
+- PHP 8.5.13+
+- `componenta/interceptor` 4 with DI 6 and Config 4
+- `symfony/serializer` 8.1+
 
 ## Quick Start
 
@@ -41,7 +41,39 @@ final class UserController
 
 `#[Serialize]` extends `Componenta\Interceptor\Attribute\Intercept`, so it is read by the standard `AttributeInterceptor`. `SerializeInterceptor` is created through the DI factory, and `SerializerInterface` is resolved from the container.
 
-## Dynamic Context
+## Callback Context
+
+Append `contextFactory` to compute options after a successful handler call:
+
+```php
+use Componenta\Interceptor\CallableContextInterface;
+use Componenta\Interceptor\Serialization\Attribute\Serialize;
+
+#[Serialize(
+    context: ['groups' => ['public']],
+    contextFactory: static function (
+        mixed $data,
+        CallableContextInterface $invocation,
+    ): array {
+        $query = $invocation->getParameter('query');
+
+        return ['include_author' => $query->includeAuthor];
+    },
+)]
+function listPosts(PostListQuery $query): array { return []; }
+```
+
+The callback receives the selected serialization data and the exact context passed into `SerializeInterceptor`. If a return wrapper is used, the data is its `ATTR_DATA` value. Context replacements made inside the continuation are not propagated back to this callback. Named and positional arguments are available through the public context's `getParameter()` contract.
+
+Context is combined in this order: static options and parameter mappings, return-level `ATTR_CONTEXT`, then `contextFactory` overrides. Merging is shallow: a dynamic key replaces the whole previous value, an explicit null remains null, and an empty array adds no overrides. Existing context maps and return wrappers remain supported.
+
+The factory must return an array with string keys. Invalid results raise `InvalidArgumentException` before serialization. Handler, callback, and serializer exceptions propagate unchanged. A handler failure skips the callback and serializer; a callback failure skips the serializer. Each invocation computes its own context.
+
+Invocation is native PHP, with no service injection into additional callback parameters. Reassigning callback parameters, including parameters passed by reference, does not replace the selected data or entry context. Shared nested objects retain normal PHP mutation semantics; no deep copy is made.
+
+Use a capture-free `static function` or a first-class function/static-method reference such as `contextFactory: self::serializationContext(...)`. Private static method scope is retained. Arrow functions and `use` captures are not supported inside PHP 8.5 attribute arguments. Direct construction of `SerializeInterceptor` also accepts `contextFactory` as its last optional argument.
+
+## Parameter-Mapped Context
 
 Context can be built from already resolved method parameters. The array key is the parameter name, and the value is the public property name:
 
@@ -76,7 +108,7 @@ return [
 ];
 ```
 
-`ATTR_CONTEXT` is merged with attribute context and wins on duplicate keys.
+`ATTR_CONTEXT` is merged with attribute context and wins on duplicate keys. An optional `contextFactory` runs afterward and has the final override priority.
 
 ## Ordering With Other Interceptors
 
